@@ -1,9 +1,12 @@
 {
   "account_name": "ライバー",
   "sheet_tab": "liver-auto-posttab",
-  "dedup_tab": "収集投稿",
+  "dedup_tab": "dedup",
   "genres": [
-    {"name": "ライバー", "weight": 100}
+    {
+      "name": "ライバー",
+      "weight": 100
+    }
   ],
   "posts_per_day": 8,
   "threshold_days": 7,
