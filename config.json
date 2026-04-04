@@ -1,7 +1,7 @@
 {
   "account_name": "ライバー",
-  "sheet_tab": "",
-  "dedup_tab": "dedup",
+  "sheet_tab": "liver-auto-posttab",
+  "dedup_tab": "収集投稿",
   "genres": [
     {"name": "ライバー", "weight": 100}
   ],
