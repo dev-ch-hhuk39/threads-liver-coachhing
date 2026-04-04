@@ -1,0 +1,9 @@
+.env
+sa.json
+*.b64
+*.log
+.venv/
+__pycache__/
+*.pyc
+service_account.json
+credentials.json

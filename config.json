@@ -1,0 +1,12 @@
+{
+  "account_name": "ライバー",
+  "sheet_tab": "",
+  "dedup_tab": "dedup",
+  "genres": [
+    {"name": "ライバー", "weight": 100}
+  ],
+  "posts_per_day": 8,
+  "threshold_days": 7,
+  "posts_per_run": 50,
+  "max_hashtags": 3
+}

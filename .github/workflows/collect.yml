@@ -1,25 +1,18 @@
-name: Threads daily posts
+name: コンテンツ収集・生成（ライバー Threads）
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '45 14 * * *'  # JST 00:00 ±15
-    - cron: '45 17 * * *'  # JST 03:00 ±15
-    - cron: '45 20 * * *'  # JST 06:00 ±15
-    - cron: '45 23 * * *'  # JST 09:00 ±15
-    - cron: '45 2 * * *'   # JST 12:00 ±15
-    - cron: '45 5 * * *'   # JST 15:00 ±15
-    - cron: '45 8 * * *'   # JST 18:00 ±15
-    - cron: '45 11 * * *'  # JST 21:00 ±15
+    - cron: '0 13 * * *'  # JST 22:00 毎日チェック
 
 concurrency:
-  group: threads-auto
+  group: collect-liver
   cancel-in-progress: false
 
 jobs:
-  post:
+  collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -36,8 +29,8 @@ jobs:
 
       - name: Mask secrets
         run: |
-          echo "::add-mask::${{ secrets.THREADS_ACCESS_TOKEN }}"
           echo "::add-mask::${{ secrets.SA_JSON_BASE64 }}"
+          echo "::add-mask::${{ secrets.GEMINI_API_KEY }}"
           echo "::add-mask::${{ secrets.DISCORD_WEBHOOK_URL }}"
 
       - name: Restore service account JSON
@@ -50,22 +43,15 @@ jobs:
           install -m 600 "${GITHUB_WORKSPACE}/sa.json" "$HOME/.config/gspread/service_account.json"
           rm -f "${GITHUB_WORKSPACE}/sa.json"
 
-      - name: Random delay within 30min (skip on manual runs)
-        if: github.event_name == 'schedule'
-        timeout-minutes: 40
-        run: |
-          MAX=$(( RANDOM % 1800 ))
-          echo "Random wait: ${MAX}s"
-          sleep "$MAX"
-
-      - name: Post exactly one row
+      - name: Gemini生成 → スプシ書き込み
         env:
-          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
-          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
-          SHEET_URL: ${{ secrets.SHEET_URL }}
-          SHEET_TAB: ${{ secrets.SHEET_TAB }}
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          SHEET_URL:            ${{ secrets.SHEET_URL }}
+          SHEET_TAB:            ${{ secrets.SHEET_TAB }}
+          DEDUP_TAB:            ${{ secrets.DEDUP_TAB }}
+          DISCORD_WEBHOOK_URL:  ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          python main_gsheet.py
+          python collect.py --platform threads
 
       - name: Discord通知（失敗時）
         if: failure()
@@ -75,7 +61,7 @@ jobs:
           if [ -n "$DISCORD_WEBHOOK_URL" ]; then
             curl -s -X POST "$DISCORD_WEBHOOK_URL" \
               -H "Content-Type: application/json" \
-              -d "{\"embeds\":[{\"title\":\"\\u274c 投稿失敗\",\"description\":\"ライバーThreads: 投稿エラーが発生しました。ログを確認してください。\",\"color\":16711680}]}"
+              -d "{\"embeds\":[{\"title\":\"\\u274c 収集ワークフロー失敗\",\"description\":\"ライバーThreads: collect.yml でエラーが発生しました\",\"color\":16711680}]}"
           fi
 
       - name: Keepalive
@@ -83,7 +69,7 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          date > last_run.txt
-          git add last_run.txt
-          git commit -m "keepalive: $(date -u +%Y-%m-%dT%H:%M:%SZ)" || exit 0
+          date > last_collect.txt
+          git add last_collect.txt
+          git commit -m "keepalive: collect $(date -u +%Y-%m-%dT%H:%M:%SZ)" || exit 0
           git push
