@@ -20,6 +20,8 @@ jobs:
   post:
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
