@@ -1,0 +1,78 @@
+name: Liver Threads Auto Post (queue at 14:00 & 18:00 JST)
+
+on:
+  schedule:
+    - cron: "45 4 * * *"   # JST 13:45
+    - cron: "45 8 * * *"   # JST 17:45
+  workflow_dispatch:
+
+concurrency:
+  group: liver-threads-queue-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+      THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+      SHEET_URL: ${{ secrets.SHEET_URL }}
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+      SHEET_TAB: "ライバー_03_投稿キュー"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+
+      - name: Restore service account JSON
+        run: |
+          set -eu
+          mkdir -p "$HOME/.config/gspread"
+          echo "${{ secrets.SA_JSON_BASE64 }}" | base64 -d > "${GITHUB_WORKSPACE}/sa.json"
+          install -m 600 "${GITHUB_WORKSPACE}/sa.json" "$HOME/.config/gspread/service_account.json"
+          rm -f "${GITHUB_WORKSPACE}/sa.json"
+
+      - name: Sync queue before posting
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          SHEET_URL: ${{ secrets.SHEET_URL }}
+          GCP_SA_JSON: ${{ secrets.GCP_SA_JSON }}
+        run: |
+          python x_sync_post_queue.py
+
+      - name: Random delay within 30min
+        if: github.event_name == 'schedule'
+        timeout-minutes: 40
+        run: |
+          python - <<'PY'
+          import random
+          import time
+          seconds = random.randint(0, 30 * 60)
+          print(f"[INFO] Sleeping for {seconds} seconds before posting.")
+          time.sleep(seconds)
+          PY
+
+      - name: Post exactly one queue row
+        run: |
+          python queue_gsheet.py --mode batch --max-per-run 1
+
+      - name: Keepalive Workflow
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          date > last_run.txt
+          git add last_run.txt
+          git commit -m "Auto-update to keep workflow alive" || exit 0
+          git push

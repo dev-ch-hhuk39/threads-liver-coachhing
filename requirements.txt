@@ -2,3 +2,6 @@ gspread>=6.0.0
 google-auth>=2.30.0
 requests>=2.32.0
 tenacity>=8.4.2
+pandas
+python-dotenv
+yt-dlp

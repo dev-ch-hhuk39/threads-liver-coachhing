@@ -1,0 +1,66 @@
+name: Liver Collect Posts
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: liver-collect-posts
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+      SHEET_URL: ${{ secrets.SHEET_URL }}
+      SA_JSON_BASE64: ${{ secrets.SA_JSON_BASE64 }}
+      GCP_SA_JSON: ${{ secrets.GCP_SA_JSON }}
+      X_API_KEY: ${{ secrets.X_API_KEY }}
+      X_API_SECRET: ${{ secrets.X_API_SECRET }}
+      X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+      CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+      CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+      CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+
+      - name: Collect X posts
+        run: |
+          python x_collect_posts.py --allow-empty
+
+      - name: Analyze posts
+        run: |
+          python x_analyze_posts.py
+
+      - name: Prepare media assets
+        run: |
+          python x_prepare_media_assets.py
+
+      - name: Sync Threads queue
+        run: |
+          python x_sync_post_queue.py
+
+      - name: Discord notify on failure
+        if: failure()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            curl -s -X POST "$DISCORD_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "{\"embeds\":[{\"title\":\"ライバー収集分析失敗\",\"description\":\"Liver Collect Posts でエラーが発生しました。\",\"color\":16711680}]}"
+          fi

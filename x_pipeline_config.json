@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "platform": "x",
+  "genre": "ライバー",
+  "sheet_tabs": {
+    "dashboard": "ライバー_00_ダッシュボード",
+    "collection_view": "ライバー_01_収集投稿",
+    "review": "ライバー_02_承認レビュー",
+    "post_queue": "ライバー_03_投稿キュー",
+    "raw_posts": "ライバー_98_収集内部",
+    "state": "ライバー_99_システム"
+  },
+  "monitor_accounts": [
+    {
+      "handle": "meg_lsm",
+      "url": "https://x.com/meg_lsm"
+    }
+  ],
+  "monitor_keywords": [],
+  "collection": {
+    "schedule_hours": 6,
+    "bootstrap_lookback_days": 30,
+    "incremental_overlap_hours": 24,
+    "refresh_recent_days": 7,
+    "enable_keyword_search": false,
+    "max_posts_per_account": 50,
+    "max_posts_per_keyword": 100
+  },
+  "thresholds": {
+    "buzz_like_count": 100,
+    "buzz_impression_count": 10000,
+    "relative_top_percent": 20
+  }
+}
