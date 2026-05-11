@@ -90,8 +90,8 @@ def media_urls(tweet: Dict[str, Any]) -> Dict[str, List[str]]:
         if not isinstance(item, dict):
             continue
         media_type = first_text(item.get("type"), item.get("media_type")).lower()
-        image_url = first_text(item.get("media_url_https"), item.get("media_url"), item.get("url"))
-        video_url = best_video_url(item)
+        image_url = first_text(item.get("previewUrl"), item.get("media_url_https"), item.get("media_url"), item.get("url"))
+        video_url = first_text(item.get("videoUrl")) or best_video_url(item)
         if media_type in {"video", "animated_gif"} or video_url:
             if video_url:
                 video_urls.append(video_url)
@@ -127,14 +127,16 @@ def normalize_tweet(tweet: Dict[str, Any], fallback_handle: str) -> Dict[str, An
         "post_url": f"https://x.com/{handle}/status/{post_id}" if handle and post_id else "",
         "account_name": first_text(user.get("name"), author.get("name"), handle),
         "account_handle": handle,
-        "account_id": first_text(user.get("id_str"), user.get("id"), author.get("id"), author.get("rest_id")),
+        "account_id": first_text(
+            tweet.get("authorId"), user.get("id_str"), user.get("id"), author.get("id"), author.get("rest_id")
+        ),
         "account_url": f"https://x.com/{handle}" if handle else "",
         "text": first_text(tweet.get("text"), tweet.get("full_text"), tweet.get("plainText"), legacy.get("full_text")),
         "posted_at": first_text(tweet.get("created_at"), tweet.get("createdAt"), legacy.get("created_at")),
-        "like_count": to_int(tweet.get("favorite_count") or tweet.get("like_count") or legacy.get("favorite_count")),
-        "retweet_count": to_int(tweet.get("retweet_count") or legacy.get("retweet_count")),
-        "reply_count": to_int(tweet.get("reply_count") or legacy.get("reply_count")),
-        "quote_count": to_int(tweet.get("quote_count") or legacy.get("quote_count")),
+        "like_count": to_int(tweet.get("likeCount") or tweet.get("favorite_count") or tweet.get("like_count") or legacy.get("favorite_count")),
+        "retweet_count": to_int(tweet.get("retweetCount") or tweet.get("retweet_count") or legacy.get("retweet_count")),
+        "reply_count": to_int(tweet.get("replyCount") or tweet.get("reply_count") or legacy.get("reply_count")),
+        "quote_count": to_int(tweet.get("quoteCount") or tweet.get("quote_count") or legacy.get("quote_count")),
         "impression_count": to_int(tweet.get("view_count") or nested(tweet, "views", "count")),
         "image_urls": media["image_urls"],
         "video_urls": media["video_urls"],
@@ -159,16 +161,28 @@ def run_bird_for_handle(handle: str, limit: int) -> List[Dict[str, Any]]:
         auth_token,
         "--ct0",
         ct0,
+        "--plain",
         "user-tweets",
         f"@{handle.lstrip('@')}",
-        "-n",
+        "--count",
         str(limit),
         "--json",
-        "--no-color",
     ]
-    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        stderr = mask_secret(result.stderr, [auth_token, ct0])
+        stdout = mask_secret(result.stdout, [auth_token, ct0])
+        raise RuntimeError(f"bird user-tweets failed for @{handle}: stdout={stdout[:500]} stderr={stderr[:1000]}")
     payload = json.loads(result.stdout)
     return [normalize_tweet(tweet, handle) for tweet in extract_tweets(payload)]
+
+
+def mask_secret(text: str, secrets: List[str]) -> str:
+    masked = text or ""
+    for secret in secrets:
+        if secret:
+            masked = masked.replace(secret, "***")
+    return masked
 
 
 def unique_posts(posts: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
