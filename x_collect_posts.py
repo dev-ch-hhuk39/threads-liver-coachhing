@@ -677,7 +677,10 @@ def load_posts_from_source(args, config: Dict[str, Any], state: Dict[str, str]) 
                 print(f"[WARN] Keyword collection failed: {exc}")
         else:
             notes.append("キーワード検索は現在オフです。アカウント監視のみ実行しました。")
-        return merge_posts(account_posts + keyword_posts), notes, "x_api"
+        merged_api_posts = merge_posts(account_posts + keyword_posts)
+        if merged_api_posts or source_preference == "api":
+            return merged_api_posts, notes, "x_api"
+        notes.append("X APIでは新規投稿を取得できなかったため、外部収集JSONの取り込みを確認します。")
 
     json_posts = load_posts_from_json(None)
     if json_posts:
@@ -854,7 +857,7 @@ def run():
     imported_posts, notes, source_name = load_posts_from_source(args, config, state)
     if not imported_posts:
         failed_notes = [note for note in notes if "失敗" in note or "できませんでした" in note]
-        if source_name == "x_api" and failed_notes:
+        if os.environ.get("X_FETCH_SOURCE", "auto").strip().lower() == "api" and source_name == "x_api" and failed_notes:
             state_rows = current_state_rows(config, 0, "failed")
             state_rows.append({"key": "last_collect_source", "value": source_name, "updated_at": as_iso(now_jst())})
             state_rows.append({"key": "last_collect_notes", "value": " / ".join(notes), "updated_at": as_iso(now_jst())})

@@ -21,7 +21,10 @@ jobs:
       X_API_KEY: ${{ secrets.X_API_KEY }}
       X_API_SECRET: ${{ secrets.X_API_SECRET }}
       X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
-      X_FETCH_SOURCE: api
+      X_AUTH_TOKEN: ${{ secrets.X_AUTH_TOKEN }}
+      X_CT0: ${{ secrets.X_CT0 }}
+      X_FETCH_SOURCE: auto
+      X_POSTS_JSON: ${{ secrets.X_POSTS_JSON }}
       CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
       CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
       CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
@@ -38,6 +41,15 @@ jobs:
         run: |
           python -m pip install -U pip
           pip install -r requirements.txt
+
+      - name: Collect with bird when cookie auth is configured
+        run: |
+          if [ -n "$X_AUTH_TOKEN" ] && [ -n "$X_CT0" ]; then
+            npm install -g @steipete/bird
+            python x_collect_bird_posts.py
+          else
+            echo "[INFO] X_AUTH_TOKEN / X_CT0 are not configured. Skip bird collection."
+          fi
 
       - name: Collect X posts
         run: |
