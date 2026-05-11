@@ -480,6 +480,7 @@ def build_post_record(
 
 def fetch_account_posts(config: Dict[str, Any], token: str, windows: List[Any]) -> List[Dict[str, Any]]:
     handles = [item["handle"] for item in config.get("monitor_accounts", [])]
+    print(f"[INFO] Account monitor handles: {', '.join('@' + handle for handle in handles) or '(none)'}")
     users = lookup_users(handles, token)
     collection = config["collection"]
     results: List[Dict[str, Any]] = []
@@ -491,9 +492,11 @@ def fetch_account_posts(config: Dict[str, Any], token: str, windows: List[Any]) 
             print(f"[WARN] User lookup missing for @{handle}")
             continue
 
+        account_total = 0
         for start, end in windows:
             next_token = None
             fetched = 0
+            print(f"[INFO] Fetching @{handle}: {parse_iso_z(start)} - {parse_iso_z(end)}")
             while True:
                 params = {
                     "max_results": min(100, collection.get("max_posts_per_account", 50)),
@@ -521,10 +524,13 @@ def fetch_account_posts(config: Dict[str, Any], token: str, windows: List[Any]) 
                         )
                     )
                     fetched += 1
+                    account_total += 1
 
                 next_token = (payload.get("meta") or {}).get("next_token")
                 if not next_token or fetched >= collection.get("max_posts_per_account", 50):
                     break
+            print(f"[INFO] Fetched @{handle}: {fetched} posts in this window")
+        print(f"[INFO] Fetched @{handle}: {account_total} posts total")
     return results
 
 
@@ -639,21 +645,36 @@ def load_posts_from_source(args, config: Dict[str, Any], state: Dict[str, str]) 
     can_use_api = bool(os.environ.get("X_BEARER_TOKEN", "").strip()) or (
         bool(os.environ.get("X_API_KEY", "").strip()) and bool(os.environ.get("X_API_SECRET", "").strip())
     )
+    if source_preference == "api" and not can_use_api:
+        raise RuntimeError(
+            "X API credentials are not configured. Set X_BEARER_TOKEN or both X_API_KEY and X_API_SECRET."
+        )
     if source_preference in {"api", "auto"} and can_use_api:
         token = bearer_token_from_env()
         windows = get_collection_windows(state, config)
+        notes.append(
+            "収集期間: "
+            + " / ".join(
+                f"{parse_iso_z(start)} - {parse_iso_z(end)}"
+                for start, end in windows["account_windows"]
+            )
+        )
         account_posts = []
         keyword_posts = []
         try:
             account_posts = fetch_account_posts(config, token, windows["account_windows"])
+            notes.append(f"アカウント監視取得件数: {len(account_posts)}")
         except Exception as exc:
             notes.append(f"アカウント収集で一部または全部失敗: {exc}")
+            print(f"[WARN] Account collection failed: {exc}")
         if enable_keyword_search:
             try:
                 keyword_posts, keyword_notes = fetch_keyword_posts(config, token, windows)
                 notes.extend(keyword_notes)
+                notes.append(f"キーワード検索取得件数: {len(keyword_posts)}")
             except Exception as exc:
                 notes.append(f"キーワード収集で一部または全部失敗: {exc}")
+                print(f"[WARN] Keyword collection failed: {exc}")
         else:
             notes.append("キーワード検索は現在オフです。アカウント監視のみ実行しました。")
         return merge_posts(account_posts + keyword_posts), notes, "x_api"
@@ -663,6 +684,11 @@ def load_posts_from_source(args, config: Dict[str, Any], state: Dict[str, str]) 
         notes.append("X_POSTS_JSON または data/x_posts.json から投稿データを読み込みました。")
         return json_posts, notes, "json_env"
 
+    if config.get("monitor_accounts"):
+        notes.append(
+            "X API認証情報がないため収集できませんでした。"
+            "X_BEARER_TOKEN または X_API_KEY / X_API_SECRET をGitHub Secretsに設定してください。"
+        )
     return [], notes, "empty"
 
 
@@ -827,11 +853,22 @@ def run():
 
     imported_posts, notes, source_name = load_posts_from_source(args, config, state)
     if not imported_posts:
+        failed_notes = [note for note in notes if "失敗" in note or "できませんでした" in note]
+        if source_name == "x_api" and failed_notes:
+            state_rows = current_state_rows(config, 0, "failed")
+            state_rows.append({"key": "last_collect_source", "value": source_name, "updated_at": as_iso(now_jst())})
+            state_rows.append({"key": "last_collect_notes", "value": " / ".join(notes), "updated_at": as_iso(now_jst())})
+            write_key_value_rows(state_ws, state_rows)
+            raise RuntimeError("X API collection failed: " + " / ".join(failed_notes))
         if args.allow_empty:
             state_rows = current_state_rows(config, 0, "empty_noop")
             state_rows.append({"key": "last_collect_source", "value": source_name, "updated_at": as_iso(now_jst())})
+            if notes:
+                state_rows.append({"key": "last_collect_notes", "value": " / ".join(notes), "updated_at": as_iso(now_jst())})
             write_key_value_rows(state_ws, state_rows)
-            print("[INFO] No input posts were provided. Sheet bootstrap completed.")
+            print(f"[INFO] No posts collected. source={source_name}")
+            for note in notes:
+                print(f"[INFO] {note}")
             return
         raise RuntimeError(
             "No post import source was provided. Supply --input-json, X credentials, X_POSTS_JSON, or data/x_posts.json."
